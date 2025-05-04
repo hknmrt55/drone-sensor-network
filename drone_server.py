@@ -63,7 +63,7 @@ def update_gui():
     # Schedule this function to run again after 100ms
     root.after(100, update_gui)
 
-# tkinter GUI setup
+# -----GUI Elements-----
 
 # history frame start
 frm_history = tk.Frame(master=root, relief=tk.RIDGE, borderwidth=3)
