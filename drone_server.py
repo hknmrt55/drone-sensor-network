@@ -18,9 +18,9 @@ def handle_sensor(conn, addr):
                 msg = json.loads(data.decode())
                 print(f"[{datetime.now()}] Received from {addr}: {msg}")
             except json.JSONDecodeError:
-                print(f"[{datetime.now()}] ❌ Invalid JSON from {addr}")
+                print(f"[{datetime.now()}] Invalid JSON from {addr}")
     except ConnectionResetError:
-        print(f"[{datetime.now()}] ❗ Sensor {addr} disconnected unexpectedly.")
+        print(f"[{datetime.now()}] Sensor {addr} disconnected unexpectedly.")
     finally:
         conn.close()
         print(f"[{datetime.now()}] Connection closed for {addr}")

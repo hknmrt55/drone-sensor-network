@@ -23,17 +23,17 @@ def run_sensor():
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((DRONE_HOST, DRONE_PORT))
-                print(f"[{datetime.now()}] ✅ Connected to Drone at {DRONE_HOST}:{DRONE_PORT}")
+                print(f"[{datetime.now()}] Connected to Drone at {DRONE_HOST}:{DRONE_PORT}")
                 while True:
                     payload = generate_payload()
                     s.sendall(json.dumps(payload).encode())
-                    print(f"[{datetime.now()}] 📤 Sent: {payload}")
+                    print(f"[{datetime.now()}] Sent: {payload}")
                     time.sleep(INTERVAL)
         except ConnectionRefusedError:
-            print(f"[{datetime.now()}] ❌ Drone not available. Retrying in 3 seconds...")
+            print(f"[{datetime.now()}] Drone not available. Retrying in 3 seconds...")
             time.sleep(3)
         except BrokenPipeError:
-            print(f"[{datetime.now()}] 🔌 Connection lost. Reconnecting...")
+            print(f"[{datetime.now()}] Connection lost. Reconnecting...")
             time.sleep(3)
 
 if __name__ == "__main__":
