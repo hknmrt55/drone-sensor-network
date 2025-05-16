@@ -14,7 +14,7 @@ root.title("Sensor Node")
 # Configuration
 #DRONE_HOST = 'localhost'
 #DRONE_PORT = 5050
-#SENSOR_ID = 'sensor1'
+SENSOR_ID = 'null'
 INTERVAL = 3  # seconds between sends
 running = False  # Flag to control the sensor thread
 
@@ -55,7 +55,7 @@ def generate_payload():
 
 
 def sensor_thread():
-    global running
+    global running, SENSOR_ID
     DRONE_HOST = ent_server.get()
     DRONE_PORT = int(ent_port.get())
     SENSOR_ID = "sensor" + str(ent_sensor.get())

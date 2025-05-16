@@ -20,6 +20,7 @@ outgoing_data = []
 battery_level = 100
 return_to_base = False
 lock = threading.Lock()
+reported_anomalies = set()
 
 # GUI setup
 root = tk.Tk()
@@ -75,6 +76,7 @@ def start_sensor_server():
 # ------------ Edge Processing + Anomaly Detection ------------
 
 def edge_processing():
+    global reported_anomalies
     while True:
         time.sleep(10)
         packet = {
@@ -94,20 +96,23 @@ def edge_processing():
                     "avg_humidity": round(avg_hum, 2)
                 }
                 for r in readings:
-                    if r["temperature"] > 50:
+                    anomaly_key = f"{sensor_id}_{r['timestamp']}"
+                    if r["temperature"] > 50 and anomaly_key not in reported_anomalies:
                         packet["anomalies"].append({
                             "sensor_id": sensor_id,
                             "type": "temperature_high",
                             "value": r["temperature"],
                             "timestamp": r["timestamp"]
                         })
-                    if r["humidity"] < 10:
+                        reported_anomalies.add(anomaly_key)
+                    if r["humidity"] < 10 and anomaly_key not in reported_anomalies:
                         packet["anomalies"].append({
                             "sensor_id": sensor_id,
                             "type": "humidity_low",
                             "value": r["humidity"],
                             "timestamp": r["timestamp"]
                         })
+                        reported_anomalies.add(anomaly_key)
 
             if return_to_base:
                 outgoing_data.append(packet)
@@ -122,6 +127,12 @@ def send_to_central(packet):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((CENTRAL_SERVER_HOST, CENTRAL_SERVER_PORT))
             s.sendall(json.dumps(packet).encode())
+            for sensor in packet["averages"]:
+                message_queue.put(f"[{datetime.now()}] {sensor} averages: Temp={packet['averages'][sensor]['avg_temperature']}°C | "
+                                  f"Hum={packet['averages'][sensor]['avg_humidity']}%")
+            for anomaly in packet["anomalies"]:
+                message_queue.put(f"[{datetime.now()}] Anomaly detected: {anomaly['sensor_id']} | {anomaly['type']} | "
+                                  f"Value={anomaly['value']} | Timestamp={anomaly['timestamp']}")
             message_queue.put(f"[{datetime.now()}] Forwarded data to Central Server.")
     except Exception as e:
         message_queue.put(f"[{datetime.now()}] Error sending to Central Server: {str(e)}")
