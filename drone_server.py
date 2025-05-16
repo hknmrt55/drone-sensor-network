@@ -13,17 +13,33 @@ PORT = 5050
 CENTRAL_SERVER_HOST = 'localhost'
 CENTRAL_SERVER_PORT = 6000
 
+# Shared States
+message_queue = Queue()
+buffers = defaultdict(lambda: deque(maxlen=5))
+outgoing_data = []
+battery_level = 100
+return_to_base = False
+lock = threading.Lock()
+
 # GUI setup
 root = tk.Tk()
 root.title("Drone Server")
-message_queue = Queue()
 
-# Rolling buffer per sensor
-buffers = defaultdict(lambda: deque(maxlen=5))
-buffer_lock = threading.Lock()
+battery_label = tk.Label(root, text=f"Battery Level: {battery_level}%", font=("Arial", 12, "bold"))
+battery_label.grid(row=0, column=0, padx=10, pady=5)
+battery_slider = tk.Scale(root, from_=0, to=100, orient="horizontal", label="Adjust Battery Level",
+                          command=lambda val: set_battery_level(int(val)))
+battery_slider.set(100)
+battery_slider.grid(row=1, column=0, padx=10, pady=5)
 
-# Storage for averaged data and anomalies
-outgoing_data = []
+frm_log = tk.Frame(master=root, relief=tk.RIDGE, borderwidth=3)
+listbox = tk.Listbox(master=frm_log, width=120, height=35)
+scrollbar = tk.Scrollbar(master=frm_log, orient="vertical")
+listbox.pack(side=tk.LEFT, fill=tk.BOTH)
+scrollbar.pack(side=tk.RIGHT, fill=tk.BOTH)
+listbox.config(yscrollcommand=scrollbar.set)
+scrollbar.config(command=listbox.yview)
+frm_log.grid(row=2, column=0, padx=10, pady=10)
 
 # -------- TCP Server for Sensors --------
 
@@ -37,7 +53,7 @@ def handle_sensor(conn, addr):
             try:
                 msg = json.loads(data.decode())
                 sensor_id = msg.get("sensor_id", "unknown")
-                with buffer_lock:
+                with lock:
                     buffers[sensor_id].append(msg)
                 log_msg = f"[{datetime.now()}] Received from {addr}: {msg}"
                 print(log_msg)
@@ -80,7 +96,7 @@ def edge_processing_loop():
             "anomalies": []
         }
 
-        with buffer_lock:
+        with lock:
             for sensor_id, readings in buffers.items():
                 if not readings:
                     continue
@@ -147,30 +163,57 @@ def forward_loop():
             message_queue.put(f"[{datetime.now()}] Error forwarding to Central Server: {str(e)}")
             time.sleep(5)
 
+# -------- Battery Simulation --------
+
+def battery_drain():
+    global battery_level, return_to_base
+    while True:
+        time.sleep(5)
+        with lock:
+            if battery_level > 0:
+                battery_level -= 1
+                message_queue.put(("update_battery", battery_level))
+
+            if battery_level <= 20 and not return_to_base:
+                return_to_base = True
+                message_queue.put(f"[{datetime.now()}] Battery low. Entering return-to-base mode.")
+
+            elif battery_level > 20 and return_to_base:
+                return_to_base = False
+                message_queue.put(f"[{datetime.now()}] Battery restored. Resuming normal operation.")
+
+def set_battery_level(val):
+    global battery_level, return_to_base
+    with lock:
+        battery_level = val
+        battery_label.config(text=f"Battery Level: {battery_level}%")
+        if battery_level <= 20:
+            return_to_base = True
+            message_queue.put(f"[{datetime.now()}] Manual battery low. Return-to-base mode ON.")
+        else:
+            if return_to_base:
+                return_to_base = False
+                message_queue.put(f"[{datetime.now()}] Manual battery restore. Normal mode ON.")
+
 # -------- GUI Update --------
 
 def update_gui():
     while not message_queue.empty():
         msg = message_queue.get()
-        listbox.insert(tk.END, msg)
-        listbox.yview(tk.END)
+        if isinstance(msg, tuple) and msg[0] == "update_battery":
+            battery_slider.set(msg[1])
+            battery_label.config(text=f"Battery Level: {msg[1]}%")
+        else:
+            listbox.insert(tk.END, msg)
+            listbox.yview(tk.END)
     root.after(100, update_gui)
-
-# GUI Layout
-frame = tk.Frame(master=root, relief=tk.RIDGE, borderwidth=3)
-listbox = tk.Listbox(master=frame, width=150, height=50)
-scrollbar = tk.Scrollbar(master=frame, orient="vertical")
-listbox.pack(side=tk.LEFT, fill=tk.BOTH)
-scrollbar.pack(side=tk.RIGHT, fill=tk.BOTH)
-listbox.config(yscrollcommand=scrollbar.set)
-scrollbar.config(command=listbox.yview)
-frame.grid(row=0, column=0, padx=10, pady=10)
 
 # -------- Start Threads --------
 
 threading.Thread(target=start_sensor_server, daemon=True).start()
 threading.Thread(target=edge_processing_loop, daemon=True).start()
 threading.Thread(target=forward_loop, daemon=True).start()
+threading.Thread(target=battery_drain, daemon=True).start()
 
 root.after(100, update_gui)
 root.mainloop()
