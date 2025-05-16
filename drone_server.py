@@ -10,8 +10,13 @@ import time
 # Configuration
 HOST = 'localhost'
 PORT = 5000
+new_sensor_port = PORT
 CENTRAL_SERVER_HOST = 'localhost'
 CENTRAL_SERVER_PORT = 6000
+
+drone_socket = None
+stop_server = False  # unused
+restart_server = False
 
 # Shared state
 message_queue = Queue()
@@ -26,13 +31,68 @@ reported_anomalies = set()
 root = tk.Tk()
 root.title("Drone Server")
 
-battery_label = tk.Label(root, text=f"Battery Level: {battery_level}%", font=("Arial", 12, "bold"))
+top_frame = tk.Frame(root)
+top_frame.grid(row=0, column=0, padx=10, pady=5)
+
+# battery gui start
+battery_frame = tk.Frame(top_frame)
+battery_frame.grid(row=0, column=0, padx=10, pady=5)
+
+battery_label = tk.Label(battery_frame, text=f"Battery Level: {battery_level}%", font=("Arial", 12, "bold"))
 battery_label.grid(row=0, column=0, padx=10, pady=5)
 
-battery_slider = tk.Scale(root, from_=0, to=100, orient="horizontal", label="Adjust Battery Level",
+battery_slider = tk.Scale(battery_frame, from_=0, to=100, orient="horizontal", label="Adjust Battery Level",
                           command=lambda val: set_battery_level(int(val)))
 battery_slider.set(100)
 battery_slider.grid(row=1, column=0, padx=10, pady=5)
+# battery gui end
+
+# port config start
+frm_ports = tk.Frame(top_frame)
+frm_ports.grid(row=0, column=1, padx=10)
+
+tk.Label(frm_ports, text="Sensor Port").pack()
+ent_sensor_port = tk.Entry(frm_ports)
+ent_sensor_port.insert(0, "5000")  # Default
+ent_sensor_port.pack()
+
+tk.Label(frm_ports, text="Central Server Port").pack()
+ent_central_port = tk.Entry(frm_ports)
+ent_central_port.insert(0, "6000")  # Default
+ent_central_port.pack()
+
+def change_ports():
+    global PORT, CENTRAL_SERVER_PORT, restart_server, drone_socket, new_sensor_port
+    try:
+        new_sensor_port = int(ent_sensor_port.get())
+        new_central_port = int(ent_central_port.get())
+        if not (0 < new_sensor_port < 65536) or not (0 < new_central_port < 65536):
+            raise ValueError
+    except ValueError:
+        message_queue.put(f"[{datetime.now()}] Invalid port number. Must be between 1 and 65535.")
+        return
+    
+    if new_sensor_port == PORT and new_central_port == CENTRAL_SERVER_PORT:
+        message_queue.put(f"[{datetime.now()}] Ports are already set to {PORT} and {CENTRAL_SERVER_PORT}.")
+        return
+
+    CENTRAL_SERVER_PORT = new_central_port
+
+    if new_sensor_port !=  PORT:
+        if drone_socket:
+            try:
+                drone_socket.close()
+            except:
+                pass
+        restart_server = True
+    
+    message = f"[{datetime.now()}] Current Ports, Sensor Port: {new_sensor_port}, Central Server Port: {CENTRAL_SERVER_PORT}"
+    message_queue.put(message)
+
+btn_check = tk.Button(frm_ports, text="Change Ports", command=change_ports)
+btn_check.pack(pady=5)
+
+# port config end
 
 frm_log = tk.Frame(master=root, relief=tk.RIDGE, borderwidth=3)
 listbox = tk.Listbox(master=frm_log, width=120, height=35)
@@ -65,13 +125,40 @@ def handle_sensor(conn, addr):
         message_queue.put(f"[{datetime.now()}] Connection closed for {addr}")
 
 def start_sensor_server():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.bind((HOST, PORT))
-        server.listen()
-        message_queue.put(f"[{datetime.now()}] Drone listening on {HOST}:{PORT}...")
-        while True:
-            conn, addr = server.accept()
-            threading.Thread(target=handle_sensor, args=(conn, addr), daemon=True).start()
+    global PORT, drone_socket, stop_server, restart_server
+
+    while not stop_server:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+                drone_socket = server
+                server.settimeout(1.0)  # Makes all operations interruptible
+                server.bind((HOST, PORT))
+                server.listen()
+                message_queue.put(f"[{datetime.now()}] Drone started listening on {HOST}:{PORT}...")
+
+                while not (stop_server or restart_server):
+                    try:
+                        conn, addr = server.accept()
+                        threading.Thread(target=handle_sensor, args=(conn, addr), daemon=True).start()
+                    except socket.timeout:
+                        continue
+                    except OSError:
+                        message_queue.put(f"[{datetime.now()}] Closing current server...")
+                        break
+                    except Exception as e:
+                        message_queue.put(f"[{datetime.now()}] Error: {str(e)}")
+                        time.sleep(2)
+                
+                if restart_server:
+                    message_queue.put(f"[{datetime.now()}] Restarting server on {HOST}:{PORT}...")
+                    restart_server = False
+                    PORT = new_sensor_port
+                    continue
+        except Exception as e:
+            message_queue.put(f"[{datetime.now()}] Error starting server: {str(e)}")
+            time.sleep(2)
+        
+            
 
 # ------------ Edge Processing + Anomaly Detection ------------
 
@@ -123,6 +210,7 @@ def edge_processing():
 # ------------ Central Server Forwarding ------------
 
 def send_to_central(packet):
+    global CENTRAL_SERVER_PORT
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((CENTRAL_SERVER_HOST, CENTRAL_SERVER_PORT))

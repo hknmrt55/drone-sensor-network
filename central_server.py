@@ -8,6 +8,13 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.dates as mdates
 from collections import defaultdict
+import time
+
+# Global variables
+PORT = 6000
+server_socket = None
+stop_server = False #unused
+restart_server = False
 
 # GUI queues
 log_queue = Queue()
@@ -41,13 +48,35 @@ def handle_drone(conn, addr):
         log_queue.put(f"[{datetime.now()}] Connection closed: {addr}")
 
 def start_server():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('localhost', 6000))
-        s.listen(1)
-        log_queue.put(f"[{datetime.now()}] Central Server listening on port 6000...")
-        while True:
-            conn, addr = s.accept()
-            threading.Thread(target=handle_drone, args=(conn, addr), daemon=True).start()
+    global server_socket, restart_server, stop_server
+
+    while not stop_server:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                server_socket = s
+                s.settimeout(1.0)  # Makes all operations interruptible
+                s.bind(('localhost', PORT))
+                s.listen(1)
+                log_queue.put(f"[{datetime.now()}] Central Server started listening on port {PORT}...")
+                while not (stop_server or restart_server):
+                    try:
+                        conn, addr = server_socket.accept()
+                        threading.Thread(target=handle_drone, args=(conn, addr), daemon=True).start()
+                    except socket.timeout:
+                        continue
+                    except OSError:
+                        log_queue.put(f"[{datetime.now()}] Closing current server...")
+                        break
+                    except Exception as e:
+                        log_queue.put(f"[{datetime.now()}] Error: {str(e)}")
+                        time.sleep(2)
+                if restart_server:
+                    log_queue.put(f"[{datetime.now()}] Restarting server on port {PORT}...")
+                    restart_server = False
+                    continue
+        except Exception as e:
+            log_queue.put(f"[{datetime.now()}] Error starting server: {str(e)}")
+            time.sleep(2)
 
 def update_gui():
     while not log_queue.empty():
@@ -115,6 +144,42 @@ plot_frame = tk.Frame(root)
 plot_frame.pack()
 canvas = FigureCanvasTkAgg(fig, master=plot_frame)
 canvas.get_tk_widget().pack()
+
+# port config
+frm_port = tk.Frame(frame)
+frm_port.grid(row=1, column=3, padx=10, pady=5)	
+
+tk.Label(frm_port, text="Server Port:").pack(side=tk.TOP)
+ent_port = tk.Entry(frm_port, width=10)
+ent_port.insert(0, "6000")  # Default
+ent_port.pack(side=tk.TOP, pady=5)
+
+def change_port():
+    global PORT, restart_server
+    try:
+        new_port = int(ent_port.get())
+        if not (0 < new_port < 65536):
+            raise ValueError
+    except ValueError:
+        log_queue.put(f"[{datetime.now()}] Invalid port number. Must be between 1 and 65535.")
+        return
+    
+    if new_port == PORT:
+        log_queue.put(f"[{datetime.now()}] Port is already set to {PORT}.")
+        return
+    
+    if server_socket:
+        try:
+            server_socket.close()
+        except:
+            pass
+    
+    PORT = new_port
+    restart_server = True
+    log_queue.put(f"[{datetime.now()}] Changing to port {PORT}...")
+
+btn_check = tk.Button(frm_port, text="Change Ports", command=change_port)
+btn_check.pack(side = tk.TOP, pady=5)
 
 # Start everything
 threading.Thread(target=start_server, daemon=True).start()
