@@ -146,8 +146,7 @@ def battery_drain():
         with lock:
             if battery_level > 0:
                 battery_level -= 1
-                battery_slider.set(battery_level)
-                battery_label.config(text=f"Battery Level: {battery_level}%")
+                message_queue.put(("update_battery", battery_level))
 
             if battery_level <= 20 and not return_to_base:
                 return_to_base = True
@@ -175,8 +174,12 @@ def set_battery_level(val):
 def update_gui():
     while not message_queue.empty():
         msg = message_queue.get()
-        listbox.insert(tk.END, msg)
-        listbox.yview(tk.END)
+        if isinstance(msg, tuple) and msg[0] == "update_battery":
+            battery_slider.set(msg[1])
+            battery_label.config(text=f"Battery Level: {msg[1]}%")
+        else:
+            listbox.insert(tk.END, msg)
+            listbox.yview(tk.END)
     root.after(100, update_gui)
 
 # ------------ Thread Starters ------------
