@@ -171,5 +171,6 @@ frame.grid(row=0, column=0, padx=10, pady=10)
 threading.Thread(target=start_sensor_server, daemon=True).start()
 threading.Thread(target=edge_processing_loop, daemon=True).start()
 threading.Thread(target=forward_loop, daemon=True).start()
+
 root.after(100, update_gui)
 root.mainloop()

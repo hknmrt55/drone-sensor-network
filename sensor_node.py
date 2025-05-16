@@ -18,13 +18,41 @@ SENSOR_ID = 'sensor1'
 INTERVAL = 3  # seconds between sends
 running = False  # Flag to control the sensor thread
 
+# Used to control anomaly timing
+last_anomaly_time = time.time()
+
 def generate_payload():
+    global last_anomaly_time
+    now = time.time()
+    inject_anomaly = (now - last_anomaly_time) > random.randint(15, 20)
+
+    if inject_anomaly:
+        last_anomaly_time = now
+        if random.choice([True, False]):
+            # Temperature anomaly
+            return {
+                "sensor_id": SENSOR_ID,
+                "temperature": round(random.uniform(51.0, 60.0), 2),
+                "humidity": round(random.uniform(30.0, 80.0), 2),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            # Humidity anomaly
+            return {
+                "sensor_id": SENSOR_ID,
+                "temperature": round(random.uniform(18.0, 35.0), 2),
+                "humidity": round(random.uniform(1.0, 9.0), 2),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+    # Normal payload
     return {
         "sensor_id": SENSOR_ID,
         "temperature": round(random.uniform(18.0, 35.0), 2),
         "humidity": round(random.uniform(30.0, 80.0), 2),
         "timestamp": datetime.utcnow().isoformat()
     }
+
 
 def sensor_thread():
     global running
