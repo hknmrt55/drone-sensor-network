@@ -3,25 +3,15 @@ import threading
 import time
 import json
 import random
-import tkinter as tk
-from tkinter import DISABLED
+import argparse
 from datetime import datetime
 
-# Create the main window
-root = tk.Tk()
-root.title("Sensor Node")
-
-# Configuration
-#DRONE_HOST = 'localhost'
-#DRONE_PORT = 5050
-SENSOR_ID = 'null'
-INTERVAL = 3  # seconds between sends
 running = False  # Flag to control the sensor thread
 
 # Used to control anomaly timing
 last_anomaly_time = time.time()
 
-def generate_payload():
+def generate_payload(sensor_id):
     global last_anomaly_time
     now = time.time()
     inject_anomaly = (now - last_anomaly_time) > random.randint(15, 20)
@@ -31,7 +21,7 @@ def generate_payload():
         if random.choice([True, False]):
             # Temperature anomaly
             return {
-                "sensor_id": SENSOR_ID,
+                "sensor_id": sensor_id,
                 "temperature": round(random.uniform(51.0, 60.0), 2),
                 "humidity": round(random.uniform(30.0, 80.0), 2),
                 "timestamp": datetime.utcnow().isoformat()
@@ -39,7 +29,7 @@ def generate_payload():
         else:
             # Humidity anomaly
             return {
-                "sensor_id": SENSOR_ID,
+                "sensor_id": sensor_id,
                 "temperature": round(random.uniform(18.0, 35.0), 2),
                 "humidity": round(random.uniform(1.0, 9.0), 2),
                 "timestamp": datetime.utcnow().isoformat()
@@ -47,99 +37,59 @@ def generate_payload():
 
     # Normal payload
     return {
-        "sensor_id": SENSOR_ID,
+        "sensor_id": sensor_id,
         "temperature": round(random.uniform(18.0, 35.0), 2),
         "humidity": round(random.uniform(30.0, 80.0), 2),
         "timestamp": datetime.utcnow().isoformat()
     }
 
 
-def sensor_thread():
-    global running, SENSOR_ID
-    DRONE_HOST = ent_server.get()
-    DRONE_PORT = int(ent_port.get())
-    SENSOR_ID = "sensor" + str(ent_sensor.get())
+def sensor_thread(host, port, sensor_id, interval):
+    global running
 
-    display_message(f"[{datetime.now()}] {SENSOR_ID} started. Trying to connect to Drone at {DRONE_HOST}:{DRONE_PORT}...")
+    print(f"[{datetime.now()}] {sensor_id} started. Trying to connect to Drone at {host}:{port}...")
 
     while running:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(1.0)  # Makes all operations interruptible
-                s.connect((DRONE_HOST, DRONE_PORT))
-                display_message(f"[{datetime.now()}] Connected to Drone at {DRONE_HOST}:{DRONE_PORT}")
+                s.connect((host, port))
+                print(f"[{datetime.now()}] Connected to Drone at {host}:{port}")
                 while running:
-                    payload = generate_payload()
+                    payload = generate_payload(sensor_id)
                     s.sendall(json.dumps(payload).encode())
-                    display_message(f"[{datetime.now()}] Sent: {payload}")
-                    time.sleep(INTERVAL)
+                    print(f"[{datetime.now()}] Sent: {payload}")
+                    time.sleep(interval)
         except ConnectionRefusedError:
-            display_message(f"[{datetime.now()}] Drone not available. Retrying in 3 seconds...")
+            print(f"[{datetime.now()}] Drone not available. Retrying in 3 seconds...")
             time.sleep(3)
         except BrokenPipeError:
-            display_message(f"[{datetime.now()}] Connection lost. Reconnecting...")
+            print(f"[{datetime.now()}] Connection lost. Reconnecting...")
             time.sleep(3)
         except Exception as e:
-            display_message(f"[{datetime.now()}] Error: {str(e)}")
+            print(f"[{datetime.now()}] Error: {str(e)}")
             time.sleep(3)
 
-def start_sensor():
+def main():
     global running
-    if not running:
-        running = True
-        btn_connect.config(text="Disconnect")
-        # Start sensor in a separate thread
-        thread = threading.Thread(target=sensor_thread, daemon=True)
-        thread.start()
-    else:
+
+    parser = argparse.ArgumentParser(description="Sensor Node")
+    parser.add_argument("host", type=str, help="Drone Server Host Address")
+    parser.add_argument("port", type=int, help="Drone Server Port Number")
+    parser.add_argument("sensor_id", type=str, help="Sensor ID (e.g. 'sensor1')")
+    parser.add_argument("--interval", type=int, default=3, help="Interval between payloads in seconds (default: 3)")
+
+    args = parser.parse_args()
+
+    running = True
+    try:
+        print(f"[{datetime.now()}] Starting {args.sensor_id}: Connecting to {args.host}:{args.port}")
+        print("Press Ctrl+C to stop the sensor node.")
+        sensor_thread(args.host, args.port, args.sensor_id, args.interval)
+    except KeyboardInterrupt:
+        print(f"[{datetime.now()}] Stopping {args.sensor_id}...")
         running = False
-        btn_connect.config(text="Connect")
+    
 
-def display_message(message):
-    print(message)
-    message_box.config(state=tk.NORMAL)
-    message_box.insert(tk.END, message + "\n")
-    message_box.config(state=DISABLED)
-    message_box.see(tk.END)
-
-# -----GUI Elements-----
-
-# server configuration part start
-frm_input = tk.Frame(master=root, relief=tk.RIDGE, borderwidth=3)
-
-lbl_server = tk.Label(master=frm_input, text="Server Address")
-ent_server = tk.Entry(master=frm_input, width=30)
-
-lbl_port = tk.Label(master=frm_input, text="Port")
-ent_port = tk.Entry(master=frm_input, width=10)
-
-lbl_colon = tk.Label(master=frm_input, text=":")
-
-lbl_sensor = tk.Label(master=frm_input, text="Sensor ID")
-ent_sensor = tk.Entry(master=frm_input, width=10)
-
-lbl_server.grid(row=0, column=0)
-ent_server.grid(row=1, column=0, padx=5, pady=5)
-
-lbl_colon.grid(row=1, column=1)
-
-lbl_port.grid(row=0, column=2)
-ent_port.grid(row=1, column=2, padx=5, pady=5)
-
-lbl_sensor.grid(row=0, column=3)
-ent_sensor.grid(row=1, column=3, padx=5, pady=5)
-
-frm_input.grid(row=0, column=0, padx=10, pady=20)
-# server configuration part end
-
-# connect button part start
-btn_connect = tk.Button(master=root, text="Connect", relief=tk.RAISED, borderwidth=2, command=start_sensor)
-btn_connect.grid(row=3, column=0)
-# connect button part end
-
-# message display part start
-message_box = tk.Text(root, width=35, height=8, state=DISABLED,)
-message_box.grid(row=0, column=3, columnspan=3, padx=10, pady=10, sticky="WSEN")
-# message display part end
-
-root.mainloop()
+if __name__ == "__main__":
+    main()
