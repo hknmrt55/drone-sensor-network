@@ -14,7 +14,7 @@ root.title("Sensor Node")
 # Configuration
 #DRONE_HOST = 'localhost'
 #DRONE_PORT = 5050
-SENSOR_ID = 'sensor1'
+#SENSOR_ID = 'sensor1'
 INTERVAL = 3  # seconds between sends
 running = False  # Flag to control the sensor thread
 
@@ -58,6 +58,8 @@ def sensor_thread():
     global running
     DRONE_HOST = ent_server.get()
     DRONE_PORT = int(ent_port.get())
+    SENSOR_ID = "sensor" + str(ent_sensor.get())
+
     display_message(f"[{datetime.now()}] {SENSOR_ID} started. Trying to connect to Drone at {DRONE_HOST}:{DRONE_PORT}...")
 
     while running:
@@ -76,6 +78,9 @@ def sensor_thread():
             time.sleep(3)
         except BrokenPipeError:
             display_message(f"[{datetime.now()}] Connection lost. Reconnecting...")
+            time.sleep(3)
+        except Exception as e:
+            display_message(f"[{datetime.now()}] Error: {str(e)}")
             time.sleep(3)
 
 def start_sensor():
@@ -110,6 +115,9 @@ ent_port = tk.Entry(master=frm_input, width=10)
 
 lbl_colon = tk.Label(master=frm_input, text=":")
 
+lbl_sensor = tk.Label(master=frm_input, text="Sensor ID")
+ent_sensor = tk.Entry(master=frm_input, width=10)
+
 lbl_server.grid(row=0, column=0)
 ent_server.grid(row=1, column=0, padx=5, pady=5)
 
@@ -117,6 +125,9 @@ lbl_colon.grid(row=1, column=1)
 
 lbl_port.grid(row=0, column=2)
 ent_port.grid(row=1, column=2, padx=5, pady=5)
+
+lbl_sensor.grid(row=0, column=3)
+ent_sensor.grid(row=1, column=3, padx=5, pady=5)
 
 frm_input.grid(row=0, column=0, padx=10, pady=20)
 # server configuration part end

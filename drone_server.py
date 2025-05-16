@@ -9,7 +9,7 @@ import time
 
 # Configuration
 HOST = 'localhost'
-PORT = 5050
+PORT = 5000
 CENTRAL_SERVER_HOST = 'localhost'
 CENTRAL_SERVER_PORT = 6000
 
